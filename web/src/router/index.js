@@ -57,7 +57,7 @@ const router = createRouter({
 })
 
 // Auth guard
-router.beforeEach((to, from, next) => {
+router.beforeEach((to, _from, next) => {
   const auth = useAuthStore()
   if (to.meta.public) {
     // Public route — redirect to dashboard if already logged in
