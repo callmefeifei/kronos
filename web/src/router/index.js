@@ -44,6 +44,12 @@ const routes = [
         meta: { title: '编辑任务', hidden: true },
       },
       {
+        path: 'runs/:id',
+        name: 'RunDetail',
+        component: () => import('@/views/RunDetail.vue'),
+        meta: { title: '运行详情', hidden: true },
+      },
+      {
         path: 'users',
         name: 'Users',
         component: () => import('@/views/Users.vue'),
