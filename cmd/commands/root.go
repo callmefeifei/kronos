@@ -15,9 +15,14 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	root.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ./kronos.yaml or ~/.kronos/kronos.yaml)")
+	root.PersistentFlags().StringVar(&serverURL, "server", "http://localhost:8360", "Kronos server URL")
 
 	root.AddCommand(newServeCmd())
 	root.AddCommand(newVersionCmd())
+	root.AddCommand(newTaskCmd())
+	root.AddCommand(newUserCmd())
+	root.AddCommand(newStatusCmd())
+	root.AddCommand(newConfigCmd())
 
 	return root
 }

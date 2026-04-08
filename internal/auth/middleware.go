@@ -76,6 +76,15 @@ func AuthRequired(authCfg config.AuthConfig, userStore *store.UserStore) gin.Han
 			return
 		}
 
+		// CLI admin tokens use user_id=0; skip DB lookup and grant admin access.
+		if claims.UserID == 0 && claims.Role == "admin" {
+			c.Set(ContextKeyUserID, int64(0))
+			c.Set(ContextKeyUsername, claims.Username)
+			c.Set(ContextKeyRole, "admin")
+			c.Next()
+			return
+		}
+
 		// Check that user still exists and is active
 		user, err := userStore.GetByID(claims.UserID)
 		if err != nil {

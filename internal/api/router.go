@@ -1,7 +1,9 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -12,6 +14,9 @@ import (
 	"github.com/pstrr/kronos/internal/store"
 	"gorm.io/gorm"
 )
+
+// serverStartTime records when the router was created, used by the status endpoint.
+var serverStartTime = time.Now()
 
 // NewRouter creates and configures the Gin router with all API endpoints.
 func NewRouter(
@@ -42,6 +47,21 @@ func NewRouter(
 	// Health check.
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// Server status (public, used by CLI `kronos status`).
+	r.GET("/api/v1/status", func(c *gin.Context) {
+		uptime := time.Since(serverStartTime)
+		hours := int(uptime.Hours())
+		minutes := int(uptime.Minutes()) % 60
+		seconds := int(uptime.Seconds()) % 60
+		uptimeStr := fmt.Sprintf("%dd %dh %dm %ds", hours/24, hours%24, minutes, seconds)
+		Success(c, gin.H{
+			"version":     "dev",
+			"uptime":      uptimeStr,
+			"server_time": time.Now().Format(time.RFC3339),
+			"go_version":  runtime.Version(),
+		})
 	})
 
 	// Create handlers.
