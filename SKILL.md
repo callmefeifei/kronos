@@ -103,6 +103,7 @@ kronos service uninstall   # Remove system service
 | `enable_task` | Enable a disabled task |
 | `disable_task` | Disable a task |
 | `server_status` | Server status and task counts |
+| `poll_pending_tasks` | Poll and drain pending agent tasks for MCP client execution |
 
 ## Task Types
 
@@ -110,7 +111,18 @@ kronos service uninstall   # Remove system service
 |------|---------|-------------|
 | `remind` | Timed notification | Reminder text message |
 | `script` | Execute shell/Python script | Script path or inline command |
-| `agent` | Call external AI agent | Agent config (placeholder) |
+| `agent` | AI agent execution | Natural language prompt (instruction) |
+
+### Agent Task Providers
+
+Agent tasks support two execution providers via the `args.provider` field:
+
+| Provider | Behavior |
+|----------|----------|
+| `cli` (default) | Spawns `claude -p "<prompt>"` as a new process |
+| `mcp_notify` | Pushes prompt to connected MCP clients via notification + polling queue |
+
+Agent `args` supports: `provider`, `model`, `max_turns`, `max_budget_usd`, `allowed_tools`, `work_dir`, `system_prompt`, `mcp_config`, `cli_path`.
 
 ## Schedule Types
 
@@ -158,13 +170,44 @@ create_task(
 )
 ```
 
+**"Tomorrow at market open, check my positions and sell anything not at limit-up"**
+```
+create_task(
+  name: "Auto sell non-limit-up stocks",
+  type: "agent",
+  schedule_type: "once",
+  schedule_expr: "2026-04-10T09:35:00+08:00",
+  target: "Check my stock positions. Sell everything that is not at the daily limit-up price.",
+  args: {"max_turns": 20, "max_budget_usd": 5},
+  notify_on: {"success": true, "fail": true},
+  notify_channel: "wechat"
+)
+```
+
 ## Notification Channels
 
-Tasks can notify on completion/failure via:
-- **Feishu** (Lark) webhook — interactive cards
-- **Generic webhook** — custom headers + JSON body
+Tasks can notify on completion/failure via `notify_on` and `notify_channel` fields:
 
-Configure in `~/.kronos/kronos.yaml` under `notifier`.
+| Channel | Description |
+|---------|-------------|
+| `wechat` | WeChat push (via configurable push API) |
+| `feishu` | Feishu (Lark) webhook — interactive cards |
+| `webhook` | Generic webhook — custom headers + JSON body |
+
+Example — remind task with WeChat notification:
+```
+create_task(
+  name: "Morning standup",
+  type: "remind",
+  schedule_type: "cron",
+  schedule_expr: "0 0 9 * * 1-5",
+  target: "Stand-up meeting in 10 minutes!",
+  notify_on: {"success": true},
+  notify_channel: "wechat"
+)
+```
+
+Configure channels in `~/.kronos/kronos.yaml` under `notifier`.
 
 ## Troubleshooting
 
