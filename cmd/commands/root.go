@@ -24,6 +24,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newStatusCmd())
 	root.AddCommand(newConfigCmd())
 	root.AddCommand(newMCPCmd())
+	root.AddCommand(newSetupCmd())
 
 	return root
 }
