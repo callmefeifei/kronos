@@ -1,48 +1,41 @@
-server:
-  host: 0.0.0.0
-  port: 8360
-  mode: release              # debug / release
-
 auth:
-  jwt_secret: ""             # auto-generate if empty
-  access_token_ttl: 12h
-  refresh_token_ttl: 168h    # 7 days
-
+    access_token_ttl: 12h
+    jwt_secret: ""  # auto-generated on first run
+    refresh_token_ttl: 168h
 database:
-  sqlite:
-    path: ~/.kronos/kronos.db
-  mysql:
-    enabled: false
-    host: ""
-    port: 3306
-    user: ""
-    password: ""
-    database: ""
-  redis:
-    enabled: false
-    host: ""
-    port: 6379
-    password: ""
-    db: 0
-
-scheduler:
-  max_concurrent: 10
-
-mcp:
-  enabled: true
-  host: 127.0.0.1
-  port: 8361
-  token: ""                  # auto-generate if empty
-
+    mysql:
+        database: ""
+        enabled: false
+        host: ""
+        password: ""
+        port: 3306
+        user: ""
+    redis:
+        db: 0
+        enabled: false
+        host: ""
+        password: ""
+        port: 6379
+    sqlite:
+        path: ~/.kronos/kronos.db
 log:
-  level: info                # debug / info / warn / error
-  format: text               # text / json
-
+    format: text
+    level: info
+mcp:
+    enabled: true
+    host: 127.0.0.1
+    port: 8361
+    token: ""  # auto-generated on first run
 notifier:
-  feishu:
-    enabled: false
-    webhook_url: ""
-  webhook:
-    enabled: false
-    url: ""
-    headers: {}
+    feishu:
+        enabled: false
+        webhook_url: ""
+    webhook:
+        enabled: false
+        url: ""
+scheduler:
+    max_concurrent: 10
+server:
+    host: 0.0.0.0
+    mode: release
+    port: 8360
