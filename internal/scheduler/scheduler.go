@@ -120,13 +120,18 @@ func (s *Scheduler) UpdateTask(task *model.Task) error {
 }
 
 // RunNow executes a task immediately, bypassing the schedule but still
-// respecting the concurrency semaphore.
+// respecting the concurrency semaphore. Uses "manual" as the triggered_by value.
 func (s *Scheduler) RunNow(taskID int64) error {
+	return s.RunNowWithTrigger(taskID, "manual")
+}
+
+// RunNowWithTrigger executes a task immediately with a custom triggered_by value.
+func (s *Scheduler) RunNowWithTrigger(taskID int64, triggeredBy string) error {
 	task, err := s.taskStore.GetByID(taskID)
 	if err != nil {
 		return fmt.Errorf("get task %d: %w", taskID, err)
 	}
-	s.executeTask(task, "manual")
+	s.executeTask(task, triggeredBy)
 	return nil
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/pstrr/kronos/internal/api"
 	"github.com/pstrr/kronos/internal/config"
 	"github.com/pstrr/kronos/internal/executor"
+	mcpsrv "github.com/pstrr/kronos/internal/mcp"
 	"github.com/pstrr/kronos/internal/model"
 	"github.com/pstrr/kronos/internal/notifier"
 	"github.com/pstrr/kronos/internal/scheduler"
@@ -27,6 +28,7 @@ type Server struct {
 	db        *store.Database
 	scheduler *scheduler.Scheduler
 	httpSrv   *http.Server
+	mcpSrv    *mcpsrv.Server
 }
 
 // New creates a Server with the given configuration.
@@ -81,7 +83,21 @@ func (s *Server) Start() error {
 	s.scheduler = sched
 	slog.Info("scheduler started")
 
-	// --- 7. Create and start API server ---
+	// --- 7. Init and start MCP server (if enabled) ---
+	if s.cfg.MCP.Enabled {
+		slog.Info("initializing mcp server")
+		s.mcpSrv = mcpsrv.New(s.cfg.MCP, taskStore, taskRunStore, sched)
+		if err := s.mcpSrv.Start(); err != nil {
+			slog.Error("failed to start mcp server", "error", err)
+			// Non-fatal: continue without MCP.
+		} else {
+			slog.Info("mcp server started", "host", s.cfg.MCP.Host, "port", s.cfg.MCP.Port)
+		}
+	} else {
+		slog.Info("mcp server disabled")
+	}
+
+	// --- 8. Create and start API server ---
 	slog.Info("initializing api router")
 	router := api.NewRouter(s.cfg, db.DB, userStore, taskStore, taskRunStore, notifStore, sched)
 
@@ -109,7 +125,7 @@ func (s *Server) Start() error {
 		"mode", s.cfg.Server.Mode,
 	)
 
-	// --- 8. Register signal handler and block ---
+	// --- 9. Register signal handler and block ---
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -122,7 +138,7 @@ func (s *Server) Start() error {
 		return fmt.Errorf("http server: %w", err)
 	}
 
-	// --- 9. Graceful shutdown ---
+	// --- 10. Graceful shutdown ---
 	s.Shutdown()
 	return nil
 }
@@ -139,6 +155,17 @@ func (s *Server) Shutdown() {
 			slog.Error("http server shutdown error", "error", err)
 		} else {
 			slog.Info("http server stopped")
+		}
+	}
+
+	// Stop MCP server.
+	if s.mcpSrv != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.mcpSrv.Shutdown(ctx); err != nil {
+			slog.Error("mcp server shutdown error", "error", err)
+		} else {
+			slog.Info("mcp server stopped")
 		}
 	}
 
