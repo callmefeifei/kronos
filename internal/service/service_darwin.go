@@ -174,54 +174,48 @@ func (s *darwinService) Stop() error {
 
 // Status queries launchctl to determine if the service is running and its PID.
 //
-// `launchctl list com.pstrr.kronos` outputs a line like:
+// `launchctl list <label>` outputs a dictionary format like:
 //
-//	<PID>	<LastExitStatus>	<Label>
+//	{
+//		"PID" = 12345;
+//		"Label" = "com.pstrr.kronos";
+//		...
+//	};
 //
-// When the service is not loaded the command exits non-zero with no matching
-// output.  When loaded but not running the PID field is "-".
+// When the service is not loaded the command exits non-zero.
 func (s *darwinService) Status() (ServiceStatus, error) {
 	out, err := exec.Command("launchctl", "list", serviceLabel).CombinedOutput()
 	if err != nil {
-		// Non-zero exit typically means the service is not loaded.
 		return ServiceStatus{
 			Running: false,
 			Message: "service not loaded",
 		}, nil
 	}
 
-	output := strings.TrimSpace(string(out))
-	if output == "" {
-		return ServiceStatus{Running: false, Message: "service not loaded"}, nil
-	}
+	output := string(out)
 
-	// Parse the tabular output: PID <tab> LastExitStatus <tab> Label
-	// Skip the header line ("PID\tStatus\tLabel").
+	// Parse PID from dictionary output: "PID" = 12345;
 	var pid int
 	var running bool
-
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "PID") || line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) < 3 {
-			continue
-		}
-		if parts[2] != serviceLabel {
-			continue
-		}
-		if parts[0] != "-" {
-			if p, parseErr := strconv.Atoi(parts[0]); parseErr == nil {
-				pid = p
-				running = true
+		if strings.HasPrefix(line, `"PID"`) {
+			// "PID" = 12345;
+			parts := strings.Split(line, "=")
+			if len(parts) == 2 {
+				val := strings.TrimSpace(parts[1])
+				val = strings.TrimSuffix(val, ";")
+				val = strings.TrimSpace(val)
+				if p, parseErr := strconv.Atoi(val); parseErr == nil && p > 0 {
+					pid = p
+					running = true
+				}
 			}
+			break
 		}
-		break
 	}
 
-	msg := "stopped"
+	msg := "loaded but not running"
 	if running {
 		msg = fmt.Sprintf("running (PID %d)", pid)
 	}
