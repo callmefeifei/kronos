@@ -30,14 +30,14 @@ type Executor interface {
 }
 
 // Dispatch returns the appropriate Executor for a given task type.
-func Dispatch(taskType string) (Executor, error) {
+func Dispatch(taskType string, notifier TaskNotifier) (Executor, error) {
 	switch taskType {
 	case "remind":
 		return &RemindExecutor{}, nil
 	case "script":
 		return &ScriptExecutor{}, nil
 	case "agent":
-		return &AgentExecutor{}, nil
+		return &AgentExecutor{Notifier: notifier}, nil
 	default:
 		return nil, fmt.Errorf("unknown task type: %s", taskType)
 	}
@@ -48,6 +48,7 @@ type Runner struct {
 	TaskStore    *store.TaskStore
 	TaskRunStore *store.TaskRunStore
 	Notifier     *notifier.Manager
+	MCPNotifier  TaskNotifier // optional, for agent mcp_notify provider
 }
 
 // NewRunner creates a Runner with the required dependencies.
@@ -62,7 +63,7 @@ func NewRunner(ts *store.TaskStore, trs *store.TaskRunStore, n *notifier.Manager
 // Run executes a task end-to-end: creates task_run records, handles retries,
 // sends notifications per notify_on config, and updates the task's last_run_at/last_status.
 func (r *Runner) Run(ctx context.Context, task *model.Task, triggeredBy string) {
-	executor, err := Dispatch(task.Type)
+	executor, err := Dispatch(task.Type, r.MCPNotifier)
 	if err != nil {
 		slog.Error("cannot dispatch executor", "task_id", task.ID, "type", task.Type, "error", err)
 		return

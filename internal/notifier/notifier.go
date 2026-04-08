@@ -49,6 +49,9 @@ func NewManager(cfg config.NotifierConfig, ns *store.NotificationStore) *Manager
 	if cfg.Webhook.Enabled && cfg.Webhook.URL != "" {
 		m.notifiers["webhook"] = NewWebhookNotifier(cfg.Webhook)
 	}
+	if cfg.Wechat.Enabled && cfg.Wechat.Token != "" {
+		m.notifiers["wechat"] = NewWechatNotifier(cfg.Wechat)
+	}
 
 	return m
 }

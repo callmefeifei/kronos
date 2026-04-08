@@ -33,6 +33,10 @@ notifier:
     webhook:
         enabled: false
         url: ""
+    wechat:
+        enabled: false
+        url: "https://api.ossec.cn/v1/send"
+        token: ""
 scheduler:
     max_concurrent: 10
 server:

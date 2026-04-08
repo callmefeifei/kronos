@@ -82,6 +82,7 @@ type LogConfig struct {
 type NotifierConfig struct {
 	Feishu  FeishuNotifierConfig  `mapstructure:"feishu"`
 	Webhook WebhookNotifierConfig `mapstructure:"webhook"`
+	Wechat  WechatNotifierConfig  `mapstructure:"wechat"`
 }
 
 type FeishuNotifierConfig struct {
@@ -93,6 +94,12 @@ type WebhookNotifierConfig struct {
 	Enabled bool              `mapstructure:"enabled"`
 	URL     string            `mapstructure:"url"`
 	Headers map[string]string `mapstructure:"headers"`
+}
+
+type WechatNotifierConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	URL     string `mapstructure:"url"`
+	Token   string `mapstructure:"token"`
 }
 
 // setDefaults sets all default configuration values.
@@ -126,6 +133,9 @@ func setDefaults() {
 	viper.SetDefault("notifier.feishu.webhook_url", "")
 	viper.SetDefault("notifier.webhook.enabled", false)
 	viper.SetDefault("notifier.webhook.url", "")
+	viper.SetDefault("notifier.wechat.enabled", false)
+	viper.SetDefault("notifier.wechat.url", "https://api.ossec.cn/v1/send")
+	viper.SetDefault("notifier.wechat.token", "")
 }
 
 // kronosDir returns the path to ~/.kronos/, creating it if needed.

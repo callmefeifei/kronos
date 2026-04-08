@@ -89,3 +89,9 @@ func serverStatusTool() mcp.Tool {
 		mcp.WithDescription("Get server status including task counts and connection mode"),
 	)
 }
+
+func pollPendingTasksTool() mcp.Tool {
+	return mcp.NewTool("poll_pending_tasks",
+		mcp.WithDescription("Poll and drain pending agent tasks that need execution. Returns tasks with prompts that the calling agent should execute. Tasks are removed from the queue once returned."),
+	)
+}
