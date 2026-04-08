@@ -4,9 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/spf13/viper"
 )
 
@@ -50,20 +48,4 @@ func loadConfigForCLI() (*cliConfig, error) {
 		return nil, err
 	}
 	return &cfg, nil
-}
-
-// generateAdminJWT creates a short-lived admin JWT for CLI usage.
-func generateAdminJWT(secret string) (string, error) {
-	now := time.Now()
-	claims := jwt.MapClaims{
-		"user_id":  0,
-		"username": "cli-admin",
-		"role":     "admin",
-		"type":     "access",
-		"iss":      "kronos",
-		"iat":      now.Unix(),
-		"exp":      now.Add(5 * time.Minute).Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
 }

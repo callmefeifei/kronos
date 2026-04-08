@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 
+	"github.com/pstrr/kronos/internal/apiclient"
 	"github.com/spf13/cobra"
 )
 
@@ -16,12 +17,12 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.get("/api/v1/status")
+			resp, err := client.Get("/api/v1/status")
 			if err != nil {
 				return err
 			}
 
-			data, err := extractData(resp)
+			data, err := apiclient.ExtractData(resp)
 			if err != nil {
 				return err
 			}

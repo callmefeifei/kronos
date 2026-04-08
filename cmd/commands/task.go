@@ -2,17 +2,15 @@ package commands
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
+	"github.com/pstrr/kronos/internal/apiclient"
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 )
@@ -45,12 +43,12 @@ func newTaskListCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.get("/api/v1/tasks?size=100")
+			resp, err := client.Get("/api/v1/tasks?size=100")
 			if err != nil {
 				return err
 			}
 
-			items, err := extractPagedItems(resp)
+			items, err := apiclient.ExtractPagedItems(resp)
 			if err != nil {
 				return err
 			}
@@ -117,12 +115,12 @@ func newTaskCreateCmd() *cobra.Command {
 			}
 
 			jsonData, _ := json.Marshal(body)
-			resp, err := client.post("/api/v1/tasks", jsonData)
+			resp, err := client.Post("/api/v1/tasks", jsonData)
 			if err != nil {
 				return err
 			}
 
-			data, err := extractData(resp)
+			data, err := apiclient.ExtractData(resp)
 			if err != nil {
 				return err
 			}
@@ -147,12 +145,12 @@ func newTaskInfoCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.get("/api/v1/tasks/" + args[0])
+			resp, err := client.Get("/api/v1/tasks/" + args[0])
 			if err != nil {
 				return err
 			}
 
-			data, err := extractData(resp)
+			data, err := apiclient.ExtractData(resp)
 			if err != nil {
 				return err
 			}
@@ -204,12 +202,12 @@ func newTaskRunCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.post("/api/v1/tasks/"+args[0]+"/run", nil)
+			resp, err := client.Post("/api/v1/tasks/"+args[0]+"/run", nil)
 			if err != nil {
 				return err
 			}
 
-			if err := checkResponse(resp); err != nil {
+			if err := apiclient.CheckResponse(resp); err != nil {
 				return err
 			}
 
@@ -230,12 +228,12 @@ func newTaskEnableCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.post("/api/v1/tasks/"+args[0]+"/enable", nil)
+			resp, err := client.Post("/api/v1/tasks/"+args[0]+"/enable", nil)
 			if err != nil {
 				return err
 			}
 
-			if err := checkResponse(resp); err != nil {
+			if err := apiclient.CheckResponse(resp); err != nil {
 				return err
 			}
 
@@ -256,12 +254,12 @@ func newTaskDisableCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.post("/api/v1/tasks/"+args[0]+"/disable", nil)
+			resp, err := client.Post("/api/v1/tasks/"+args[0]+"/disable", nil)
 			if err != nil {
 				return err
 			}
 
-			if err := checkResponse(resp); err != nil {
+			if err := apiclient.CheckResponse(resp); err != nil {
 				return err
 			}
 
@@ -282,12 +280,12 @@ func newTaskDeleteCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.del("/api/v1/tasks/" + args[0])
+			resp, err := client.Delete("/api/v1/tasks/" + args[0])
 			if err != nil {
 				return err
 			}
 
-			if err := checkResponse(resp); err != nil {
+			if err := apiclient.CheckResponse(resp); err != nil {
 				return err
 			}
 
@@ -308,12 +306,12 @@ func newTaskLogsCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.get("/api/v1/tasks/" + args[0] + "/runs?size=10&page=1")
+			resp, err := client.Get("/api/v1/tasks/" + args[0] + "/runs?size=10&page=1")
 			if err != nil {
 				return err
 			}
 
-			items, err := extractPagedItems(resp)
+			items, err := apiclient.ExtractPagedItems(resp)
 			if err != nil {
 				return err
 			}
@@ -410,131 +408,24 @@ func prompt(reader *bufio.Reader, label string) (string, error) {
 	return strings.TrimSpace(line), nil
 }
 
-// --- API client helpers ---
+// --- API client helpers (delegates to apiclient package) ---
 
 var serverURL string
 
-type apiClient struct {
-	baseURL string
-	token   string
-	http    *http.Client
-}
-
-func newAPIClient() (*apiClient, error) {
-	token, err := generateCLIToken()
-	if err != nil {
-		return nil, fmt.Errorf("generate auth token: %w", err)
-	}
-	return &apiClient{
-		baseURL: serverURL,
-		token:   token,
-		http:    &http.Client{Timeout: 30 * time.Second},
-	}, nil
-}
-
-func (c *apiClient) get(path string) (map[string]interface{}, error) {
-	return c.do("GET", path, nil)
-}
-
-func (c *apiClient) post(path string, body []byte) (map[string]interface{}, error) {
-	return c.do("POST", path, body)
-}
-
-func (c *apiClient) del(path string) (map[string]interface{}, error) {
-	return c.do("DELETE", path, nil)
-}
-
-func (c *apiClient) do(method, path string, body []byte) (map[string]interface{}, error) {
-	var reqBody io.Reader
-	if body != nil {
-		reqBody = bytes.NewReader(body)
-	}
-
-	req, err := http.NewRequest(method, c.baseURL+path, reqBody)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, fmt.Errorf("parse response: %w (body: %s)", err, string(data))
-	}
-
-	return result, nil
-}
-
-// generateCLIToken creates a JWT admin token from the local config's jwt_secret.
-func generateCLIToken() (string, error) {
-	cfg, err := loadCLIConfig()
-	if err != nil {
-		return "", err
-	}
-
-	if cfg.Auth.JWTSecret == "" {
-		return "", fmt.Errorf("jwt_secret not configured; run 'kronos serve' first to auto-generate")
-	}
-
-	// Use the auth package to generate a token for a virtual CLI admin user.
-	token, err := generateAdminJWT(cfg.Auth.JWTSecret)
-	if err != nil {
-		return "", err
-	}
-	return token, nil
-}
-
-func loadCLIConfig() (*cliConfig, error) {
+func newAPIClient() (*apiclient.Client, error) {
 	cfg, err := loadConfigForCLI()
 	if err != nil {
 		return nil, err
 	}
-	return cfg, nil
+
+	if cfg.Auth.JWTSecret == "" {
+		return nil, fmt.Errorf("jwt_secret not configured; run 'kronos serve' first to auto-generate")
+	}
+
+	return apiclient.New(serverURL, cfg.Auth.JWTSecret)
 }
 
-// --- Response parsing helpers ---
-
-func extractPagedItems(resp map[string]interface{}) ([]interface{}, error) {
-	if err := checkResponse(resp); err != nil {
-		return nil, err
-	}
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("unexpected response format")
-	}
-	items, ok := data["items"].([]interface{})
-	if !ok {
-		return []interface{}{}, nil
-	}
-	return items, nil
-}
-
-func extractData(resp map[string]interface{}) (interface{}, error) {
-	if err := checkResponse(resp); err != nil {
-		return nil, err
-	}
-	return resp["data"], nil
-}
-
-func checkResponse(resp map[string]interface{}) error {
-	code, _ := resp["code"].(float64)
-	if code != 0 {
-		msg, _ := resp["message"].(string)
-		return fmt.Errorf("API error (code %d): %s", int(code), msg)
-	}
-	return nil
-}
+// --- Formatting helpers (used by task, user, status commands) ---
 
 func formatID(v interface{}) string {
 	if v == nil {

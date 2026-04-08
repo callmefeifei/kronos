@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/pstrr/kronos/internal/apiclient"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -35,12 +36,12 @@ func newUserListCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.get("/api/v1/users?size=100")
+			resp, err := client.Get("/api/v1/users?size=100")
 			if err != nil {
 				return err
 			}
 
-			items, err := extractPagedItems(resp)
+			items, err := apiclient.ExtractPagedItems(resp)
 			if err != nil {
 				return err
 			}
@@ -113,12 +114,12 @@ func newUserCreateCmd() *cobra.Command {
 			}
 			jsonData, _ := json.Marshal(body)
 
-			resp, err := client.post("/api/v1/users", jsonData)
+			resp, err := client.Post("/api/v1/users", jsonData)
 			if err != nil {
 				return err
 			}
 
-			data, err := extractData(resp)
+			data, err := apiclient.ExtractData(resp)
 			if err != nil {
 				return err
 			}
@@ -142,12 +143,12 @@ func newUserDeleteCmd() *cobra.Command {
 				return err
 			}
 
-			resp, err := client.del("/api/v1/users/" + args[0])
+			resp, err := client.Delete("/api/v1/users/" + args[0])
 			if err != nil {
 				return err
 			}
 
-			if err := checkResponse(resp); err != nil {
+			if err := apiclient.CheckResponse(resp); err != nil {
 				return err
 			}
 
