@@ -1,0 +1,38 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  color: #1d2129;
+  background-color: #f2f3f5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root {
+  --color-primary: #165dff;
+  --color-primary-light: #e8f3ff;
+  --color-text: #1d2129;
+  --color-text-secondary: #86909c;
+  --color-bg: #f2f3f5;
+  --color-border: #e5e6eb;
+  --color-white: #ffffff;
+  --sidebar-width: 220px;
+  --sidebar-collapsed-width: 64px;
+  --header-height: 56px;
+}
+
+/* Override Element Plus primary color */
+:root {
+  --el-color-primary: #165dff;
+  --el-color-primary-light-3: #5e8fff;
+  --el-color-primary-light-5: #8fb0ff;
+  --el-color-primary-light-7: #bfd4ff;
+  --el-color-primary-light-8: #d9e5ff;
+  --el-color-primary-light-9: #e8f3ff;
+  --el-color-primary-dark-2: #0e42bf;
+}
