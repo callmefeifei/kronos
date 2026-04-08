@@ -192,14 +192,25 @@ func (s *Scheduler) addOnceTask(task *model.Task) error {
 
 	if delay <= 0 {
 		// Target is in the past.
-		if task.LastStatus == "" {
-			// Never ran — execute immediately.
-			slog.Info("once task target in past, executing immediately", "task_id", task.ID)
-			go s.executeTask(&taskCopy, "scheduler")
+		if task.LastRunAt != nil {
+			// Already ran — skip.
+			slog.Debug("once task already executed, skipping", "task_id", task.ID)
 			return nil
 		}
-		// Already ran — skip.
-		slog.Debug("once task already executed, skipping", "task_id", task.ID)
+		// Never ran — schedule immediate execution via a minimal timer
+		// so it runs outside the caller's lock context.
+		slog.Info("once task target in past, executing immediately", "task_id", task.ID)
+		timer := time.AfterFunc(1*time.Millisecond, func() {
+			s.executeTask(&taskCopy, "scheduler")
+			taskCopy.NextRunAt = nil
+			if err := s.taskStore.Update(&taskCopy); err != nil {
+				slog.Error("failed to clear next_run_at after once task", "task_id", taskCopy.ID, "error", err)
+			}
+			s.mu.Lock()
+			delete(s.timers, taskCopy.ID)
+			s.mu.Unlock()
+		})
+		s.timers[task.ID] = timer
 		return nil
 	}
 
