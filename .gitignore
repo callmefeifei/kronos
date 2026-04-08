@@ -1,5 +1,6 @@
 # Binaries
 bin/
+/kronos
 *.exe
 
 # Go
@@ -16,6 +17,7 @@ vendor/
 
 # OS
 .DS_Store
+.claude/
 Thumbs.db
 
 # Node (web frontend)
