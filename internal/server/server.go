@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	kronos "github.com/pstrr/kronos"
 	"github.com/pstrr/kronos/internal/api"
 	"github.com/pstrr/kronos/internal/config"
 	"github.com/pstrr/kronos/internal/executor"
@@ -99,7 +100,7 @@ func (s *Server) Start() error {
 
 	// --- 8. Create and start API server ---
 	slog.Info("initializing api router")
-	router := api.NewRouter(s.cfg, db.DB, userStore, taskStore, taskRunStore, notifStore, sched)
+	router := api.NewRouter(s.cfg, db.DB, userStore, taskStore, taskRunStore, notifStore, sched, kronos.WebDistFS())
 
 	addr := fmt.Sprintf("%s:%d", s.cfg.Server.Host, s.cfg.Server.Port)
 	s.httpSrv = &http.Server{

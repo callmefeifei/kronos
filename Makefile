@@ -5,10 +5,12 @@ LDFLAGS := -X github.com/pstrr/kronos/cmd/commands.Version=$(VERSION) \
            -X github.com/pstrr/kronos/cmd/commands.GitCommit=$(GIT_COMMIT) \
            -X github.com/pstrr/kronos/cmd/commands.BuildTime=$(BUILD_TIME)
 
-.PHONY: build dev clean
+.PHONY: build dev clean frontend
 
-build:
-	@if [ -d web/node_modules ]; then cd web && npm run build; fi
+frontend:
+	cd web && npm ci && npm run build
+
+build: frontend
 	go build -ldflags "$(LDFLAGS)" -o bin/kronos ./cmd/kronos
 
 dev:
@@ -16,3 +18,4 @@ dev:
 
 clean:
 	rm -rf bin/
+	rm -rf web/dist/assets web/dist/index.html web/dist/vite.svg

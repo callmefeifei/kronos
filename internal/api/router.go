@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"io/fs"
 	"net/http"
 	"runtime"
 	"time"
@@ -27,6 +28,7 @@ func NewRouter(
 	taskRunStore *store.TaskRunStore,
 	notificationStore *store.NotificationStore,
 	sched *scheduler.Scheduler,
+	distFS fs.FS,
 ) *gin.Engine {
 	// Set Gin mode from config.
 	gin.SetMode(cfg.Server.Mode)
@@ -128,6 +130,9 @@ func NewRouter(
 	{
 		notifications.GET("", notifHandler.List)
 	}
+
+	// Serve embedded Vue SPA for non-API routes.
+	RegisterSPA(r, distFS)
 
 	return r
 }
