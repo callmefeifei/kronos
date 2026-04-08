@@ -7,11 +7,12 @@ export function getRun(id) {
 }
 
 // Get run output (plain text)
-export function getRunOutput(id) {
+export async function getRunOutput(id) {
   const token = localStorage.getItem('kronos_access_token')
-  return axios.get(`/api/v1/runs/${id}/output`, {
+  const res = await axios.get(`/api/v1/runs/${id}/output`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     responseType: 'text',
     transformResponse: [(data) => data],
-  }).then((res) => res.data)
+  })
+  return res.data
 }
