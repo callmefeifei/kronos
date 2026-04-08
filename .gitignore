@@ -1,0 +1,26 @@
+# Binaries
+bin/
+*.exe
+
+# Go
+vendor/
+
+# Config with secrets
+*.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (web frontend)
+web/node_modules/
+web/dist/
+
+# Kronos data
+*.db
