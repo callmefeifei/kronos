@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/pstrr/kronos/internal/config"
+	"github.com/pstrr/kronos/internal/server"
 	"github.com/spf13/cobra"
 )
 
@@ -20,31 +21,18 @@ func newServeCmd() *cobra.Command {
 
 			config.SetupLogging(cfg.Log)
 
-			slog.Info("configuration loaded successfully")
-			slog.Info("server",
+			slog.Info("configuration loaded",
 				"host", cfg.Server.Host,
 				"port", cfg.Server.Port,
-				"mode", cfg.Server.Mode)
-			slog.Info("database",
+				"mode", cfg.Server.Mode,
 				"sqlite_path", cfg.Database.SQLite.Path,
 				"mysql_enabled", cfg.Database.MySQL.Enabled,
-				"redis_enabled", cfg.Database.Redis.Enabled)
-			slog.Info("scheduler",
-				"max_concurrent", cfg.Scheduler.MaxConcurrent)
-			slog.Info("mcp",
-				"enabled", cfg.MCP.Enabled,
-				"host", cfg.MCP.Host,
-				"port", cfg.MCP.Port)
-			slog.Info("auth",
-				"access_ttl", cfg.Auth.AccessTokenTTL,
-				"refresh_ttl", cfg.Auth.RefreshTokenTTL)
-			slog.Info("notifier",
-				"feishu", cfg.Notifier.Feishu.Enabled,
-				"webhook", cfg.Notifier.Webhook.Enabled)
+				"redis_enabled", cfg.Database.Redis.Enabled,
+				"max_concurrent", cfg.Scheduler.MaxConcurrent,
+			)
 
-			// TODO: start HTTP server, scheduler, MCP server
-			slog.Info("server not yet implemented, exiting")
-			return nil
+			srv := server.New(cfg)
+			return srv.Start()
 		},
 	}
 }
