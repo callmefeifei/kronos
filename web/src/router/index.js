@@ -26,10 +26,22 @@ const routes = [
         meta: { title: '任务管理', icon: 'List' },
       },
       {
+        path: 'tasks/create',
+        name: 'TaskCreate',
+        component: () => import('@/views/TaskForm.vue'),
+        meta: { title: '新建任务', hidden: true },
+      },
+      {
         path: 'tasks/:id',
         name: 'TaskDetail',
         component: () => import('@/views/TaskDetail.vue'),
         meta: { title: '任务详情', hidden: true },
+      },
+      {
+        path: 'tasks/:id/edit',
+        name: 'TaskEdit',
+        component: () => import('@/views/TaskForm.vue'),
+        meta: { title: '编辑任务', hidden: true },
       },
       {
         path: 'users',
