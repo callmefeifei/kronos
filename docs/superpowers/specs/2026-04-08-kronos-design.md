@@ -65,7 +65,7 @@ server:
   mode: release              # debug / release
 
 auth:
-  jwt_secret: ""
+  jwt_secret: ""                # 为空时首次启动自动生成随机 secret 并回写配置文件
   access_token_ttl: 12h
   refresh_token_ttl: 7d
 
@@ -91,7 +91,13 @@ scheduler:
 
 mcp:
   enabled: true
+  host: 127.0.0.1              # 默认仅本地访问，需远程访问改为 0.0.0.0
   port: 8361
+  token: ""                    # Bearer token 认证，为空时首次启动自动生成
+
+log:
+  level: info                  # debug / info / warn / error
+  format: text                 # text / json
 
 notifier:
   feishu:
@@ -126,7 +132,7 @@ notifier:
 | name | VARCHAR(255) | 任务名 |
 | type | ENUM('remind','script','agent') | 任务类型 |
 | schedule_type | ENUM('cron','interval','once') | 调度类型 |
-| schedule_expr | VARCHAR(255) | 调度表达式 |
+| schedule_expr | VARCHAR(255) | cron 表达式 / 间隔表达式(如 "30s","5m") / ISO8601 时间(once 类型) |
 | target | TEXT | 提醒文本/脚本路径/agent 指令 |
 | args | JSON | 额外参数 |
 | timeout | INT DEFAULT 300 | 执行超时(秒) |
@@ -135,9 +141,15 @@ notifier:
 | notify_on | JSON | 通知条件 {"success": false, "fail": true} |
 | notify_channel | VARCHAR(32) | 通知渠道 feishu/webhook |
 | enabled | BOOLEAN DEFAULT true | 是否启用 |
+| next_run_at | DATETIME NULL | 下次执行时间（调度引擎计算填充） |
+| last_run_at | DATETIME NULL | 最近执行时间 |
+| last_status | VARCHAR(16) NULL | 最近执行状态 |
 | user_id | BIGINT FK | 归属用户 |
 | created_at | DATETIME | 创建时间 |
 | updated_at | DATETIME | 更新时间 |
+| deleted_at | DATETIME NULL | 软删除时间（GORM soft delete） |
+
+**索引**：`(user_id, enabled)`, `(deleted_at)`, `(next_run_at)`
 
 ### task_runs
 
@@ -145,26 +157,32 @@ notifier:
 |------|------|------|
 | id | BIGINT PK AUTO | 主键 |
 | task_id | BIGINT FK | 关联任务 |
+| triggered_by | VARCHAR(64) | 触发来源：scheduler / api:user_id / mcp / cli |
 | status | ENUM('running','success','failed','timeout','cancelled') | 执行状态 |
 | started_at | DATETIME | 开始时间 |
 | finished_at | DATETIME | 结束时间 |
 | duration_ms | INT | 执行耗时(ms) |
 | exit_code | INT | 退出码(script 类型) |
-| output | TEXT | 执行输出(max 64KB) |
+| output | MEDIUMTEXT | 执行输出(应用层截断 64KB) |
 | error | TEXT | 错误信息 |
 | retry_attempt | INT DEFAULT 0 | 当前重试次数 |
+
+**索引**：`(task_id, started_at DESC)`
 
 ### notifications
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id | BIGINT PK AUTO | 主键 |
+| task_id | BIGINT FK | 关联任务（冗余，便于查询） |
 | task_run_id | BIGINT FK | 关联执行记录 |
 | channel | VARCHAR(32) | 通知渠道 |
 | status | ENUM('sent','failed') | 发送状态 |
 | payload | TEXT | 发送内容 |
 | response | TEXT | 渠道返回 |
 | created_at | DATETIME | 创建时间 |
+
+**索引**：`(task_id)`, `(task_run_id)`
 
 ## 6. 核心模块设计
 
@@ -185,7 +203,9 @@ notifier:
 调度类型处理：
 - **cron** — 直接注册 cron 表达式
 - **interval** — 转换为 `@every` 语法
-- **once** — 注册后执行一次，完成后自动 `enabled=false`
+- **once** — `schedule_expr` 为 ISO8601 时间（如 `2026-04-10T09:00:00+08:00`），调度器用 `time.AfterFunc` 到点执行，执行后自动 `enabled=false`。启动时检查：若目标时间已过且未执行，立即执行；若已执行过（`last_status` 非空），跳过
+
+单实例保护：启动时在 SQLite 上获取文件锁（`flock`），防止多实例并发运行导致任务重复执行。
 
 ### 6.2 执行器 (internal/executor)
 
@@ -230,7 +250,9 @@ daemon 内置 SSE 端点（默认 port 8361），暴露以下 tools：
 | enable_task | 启用任务 |
 | disable_task | 禁用任务 |
 
-Agent（Claude Code / Cursor 等）连接 `http://localhost:8361/mcp` 即可操作。
+认证：Bearer token（配置文件中的 `mcp.token`），默认绑定 127.0.0.1 仅本地访问。
+
+Agent（Claude Code / Cursor 等）连接 `http://localhost:8361/mcp` 并携带 token 即可操作。
 
 ### 6.5 认证鉴权 (internal/auth)
 
@@ -242,6 +264,9 @@ Agent（Claude Code / Cursor 等）连接 `http://localhost:8361/mcp` 即可操�
 ## 7. API 设计
 
 前缀 `/api/v1/`，统一响应 `{"code": 0, "message": "ok", "data": {...}}`
+
+分页响应统一格式：`{"code": 0, "message": "ok", "data": {"items": [...], "total": 100, "page": 1, "size": 20}}`
+所有列表接口均支持 `?page=&size=` 参数，默认 page=1, size=20。
 
 ### 认证
 
@@ -337,16 +362,19 @@ UI 风格：火山引擎风格（primary #165dff，白底卡片，12px 圆角，
 ```
 kronos serve
 ├── 1. 加载配置 (kronos.yaml / 环境变量 / CLI flags)
+├── 1.5 安全检查：jwt_secret/mcp.token 为空则自动生成并回写配置文件
 ├── 2. 初始化存储
 │     ├── SQLite 连接 + auto migrate
 │     ├── MySQL 连接（如 enabled）
 │     └── Redis 连接（如 enabled）
 ├── 3. 检查默认 admin 用户，不存在则创建
-├── 4. 启动调度引擎（从 DB 加载 enabled 任务）
-├── 5. 启动 API Server (port 8360)
-├── 6. 启动 MCP Server (port 8361, 如 enabled)
-├── 7. 注册信号处理 (SIGINT/SIGTERM)
-└── 8. 就绪日志
+├── 3.5 获取文件锁（防止多实例）
+├── 4. 清理上次异常退出的 running 状态 task_run → 标记 failed
+├── 5. 启动调度引擎（从 DB 加载 enabled 任务）
+├── 6. 启动 API Server (port 8360)
+├── 7. 启动 MCP Server (port 8361, 如 enabled)
+├── 8. 注册信号处理 (SIGINT/SIGTERM)
+└── 9. 就绪日志
 ```
 
 优雅关停：停止接收新请求 → 等待运行中任务完成（最多 30s）→ 关闭 DB 连接 → 退出。
