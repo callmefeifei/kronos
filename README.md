@@ -48,7 +48,9 @@ Restart your AI assistant after setup. Done.
 - **Web UI**: Dashboard, task management, execution history at `localhost:8360`
 - **MCP integration**: 10 tools for AI assistants to manage tasks directly
 - **System service**: LaunchAgent (macOS), systemd (Linux), Windows Service
-- **Notifications**: Feishu interactive cards, generic webhooks
+- **Notifications**: Feishu interactive cards, WeChat, generic webhooks
+- **Health probes**: `/health` (liveness) and `/ready` (readiness with DB + scheduler checks)
+- **Auto-cleanup**: Configurable retention policy for task run history (default 30 days)
 - **Single binary**: Frontend embedded via `go:embed`, one file to deploy
 
 ## Service Management
@@ -79,6 +81,7 @@ kronos service status      # Check status
 | `get_task_status` | Task info + latest run |
 | `get_task_history` | Execution history |
 | `enable_task` / `disable_task` | Toggle task |
+| `poll_pending_tasks` | Poll for tasks needing attention |
 | `server_status` | Server health + counts |
 
 ## Configuration
@@ -92,14 +95,27 @@ server:
 
 scheduler:
   max_concurrent: 10
+  cleanup_retention_days: 30  # auto-delete task runs older than N days (0 = disabled)
+  cleanup_interval_hours: 6
 
 notifier:
   feishu:
     enabled: false
     webhook_url: ""
+  wechat:
+    enabled: false
+    url: "https://api.ossec.cn/v1/send"
+    token: ""
   webhook:
     enabled: false
     url: ""
+```
+
+## Health Checks
+
+```
+GET /health   → 200 {"status": "ok"}                        # liveness
+GET /ready    → 200 {"status": "ready", "checks": {...}}     # readiness (DB + scheduler)
 ```
 
 ## Tech Stack
