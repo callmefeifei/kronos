@@ -55,11 +55,17 @@ func (e *ScriptExecutor) Execute(ctx context.Context, task *model.Task) *RunResu
 	return result
 }
 
-// buildCommand creates the appropriate exec.Cmd based on the target's file extension.
-// - .py files are run via python3
-// - .sh files or no extension are run via sh -c
-// - everything else is executed directly
+// buildCommand creates the appropriate exec.Cmd based on the target string.
+// If the target contains spaces or shell metacharacters, it is treated as a
+// full shell command and executed via "sh -c". Single-path targets are
+// dispatched by file extension (.py → python3, .sh → sh -c, etc.).
 func buildCommand(ctx context.Context, target string) *exec.Cmd {
+	// If target contains spaces, it's a full command line (e.g. "python3 script.py --flag").
+	// Run via shell to handle arguments, pipes, etc.
+	if strings.ContainsAny(target, " \t|;&") {
+		return exec.CommandContext(ctx, "sh", "-c", target)
+	}
+
 	ext := strings.ToLower(filepath.Ext(target))
 
 	switch ext {
