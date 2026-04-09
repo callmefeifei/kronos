@@ -1,6 +1,8 @@
 package store
 
 import (
+	"time"
+
 	"github.com/pstrr/kronos/internal/model"
 	"gorm.io/gorm"
 )
@@ -73,6 +75,13 @@ func (s *TaskRunStore) ListByTask(taskID int64, page, size int) ([]model.TaskRun
 	}
 
 	return runs, total, nil
+}
+
+// DeleteOlderThan removes task runs with started_at before the given cutoff time.
+// Returns the number of deleted records.
+func (s *TaskRunStore) DeleteOlderThan(cutoff time.Time) (int64, error) {
+	result := s.db.Where("started_at < ?", cutoff).Delete(&model.TaskRun{})
+	return result.RowsAffected, result.Error
 }
 
 // GetLatestByTask returns the most recent task run for a given task.

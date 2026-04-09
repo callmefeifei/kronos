@@ -65,6 +65,9 @@ type RedisConfig struct {
 
 type SchedulerConfig struct {
 	MaxConcurrent int `mapstructure:"max_concurrent"`
+	// Cleanup settings for old task run records.
+	CleanupRetentionDays int `mapstructure:"cleanup_retention_days"` // 0 = disabled
+	CleanupIntervalHours int `mapstructure:"cleanup_interval_hours"`
 }
 
 type MCPConfig struct {
@@ -120,6 +123,8 @@ func setDefaults() {
 	viper.SetDefault("database.redis.db", 0)
 
 	viper.SetDefault("scheduler.max_concurrent", 10)
+	viper.SetDefault("scheduler.cleanup_retention_days", 30) // keep 30 days by default
+	viper.SetDefault("scheduler.cleanup_interval_hours", 6)  // run cleanup every 6 hours
 
 	viper.SetDefault("mcp.enabled", true)
 	viper.SetDefault("mcp.host", "127.0.0.1")

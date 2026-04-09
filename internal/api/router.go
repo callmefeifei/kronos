@@ -46,9 +46,46 @@ func NewRouter(
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// Health check.
+	// Liveness probe — always returns ok if the process is running.
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// Readiness probe — checks DB connectivity and scheduler status.
+	r.GET("/ready", func(c *gin.Context) {
+		checks := gin.H{}
+		ready := true
+
+		// Check DB.
+		sqlDB, err := db.DB()
+		if err != nil {
+			checks["database"] = "error: " + err.Error()
+			ready = false
+		} else if err := sqlDB.Ping(); err != nil {
+			checks["database"] = "error: " + err.Error()
+			ready = false
+		} else {
+			checks["database"] = "ok"
+		}
+
+		// Check scheduler.
+		if sched != nil {
+			entries := sched.EntryCount()
+			checks["scheduler"] = gin.H{"status": "ok", "scheduled_tasks": entries}
+		} else {
+			checks["scheduler"] = "not initialized"
+			ready = false
+		}
+
+		checks["uptime"] = time.Since(serverStartTime).String()
+
+		status := http.StatusOK
+		statusStr := "ready"
+		if !ready {
+			status = http.StatusServiceUnavailable
+			statusStr = "not ready"
+		}
+		c.JSON(status, gin.H{"status": statusStr, "checks": checks})
 	})
 
 	// Server status (public, used by CLI `kronos status`).

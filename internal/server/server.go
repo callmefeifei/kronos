@@ -30,11 +30,12 @@ type Server struct {
 	scheduler *scheduler.Scheduler
 	httpSrv   *http.Server
 	mcpSrv    *mcpsrv.Server
+	stopCh    chan struct{} // signals background goroutines to stop
 }
 
 // New creates a Server with the given configuration.
 func New(cfg *config.Config) *Server {
-	return &Server{cfg: cfg}
+	return &Server{cfg: cfg, stopCh: make(chan struct{})}
 }
 
 // Start performs the full startup sequence and blocks until a termination
@@ -83,6 +84,11 @@ func (s *Server) Start() error {
 	}
 	s.scheduler = sched
 	slog.Info("scheduler started")
+
+	// --- 6b. Start task run cleanup goroutine ---
+	if s.cfg.Scheduler.CleanupRetentionDays > 0 {
+		go s.runCleanupLoop(taskRunStore)
+	}
 
 	// --- 7. Init and start MCP server (if enabled) ---
 	if s.cfg.MCP.Enabled {
@@ -150,6 +156,14 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown() {
 	slog.Info("shutting down kronos server")
 
+	// Signal background goroutines to stop.
+	select {
+	case <-s.stopCh:
+		// Already closed.
+	default:
+		close(s.stopCh)
+	}
+
 	// Stop accepting new HTTP requests; wait up to 15s for in-flight.
 	if s.httpSrv != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -214,4 +228,46 @@ func (s *Server) ensureDefaultAdmin(userStore *store.UserStore) error {
 
 	slog.Warn("default admin user created (username: admin, password: admin) — please change the password immediately")
 	return nil
+}
+
+// runCleanupLoop periodically deletes old task run records.
+func (s *Server) runCleanupLoop(taskRunStore *store.TaskRunStore) {
+	interval := time.Duration(s.cfg.Scheduler.CleanupIntervalHours) * time.Hour
+	if interval <= 0 {
+		interval = 6 * time.Hour
+	}
+	retention := time.Duration(s.cfg.Scheduler.CleanupRetentionDays) * 24 * time.Hour
+
+	slog.Info("task run cleanup enabled",
+		"retention_days", s.cfg.Scheduler.CleanupRetentionDays,
+		"interval_hours", s.cfg.Scheduler.CleanupIntervalHours,
+	)
+
+	// Run once immediately on startup, then on interval.
+	s.doCleanup(taskRunStore, retention)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.doCleanup(taskRunStore, retention)
+		case <-s.stopCh:
+			return
+		}
+	}
+}
+
+// doCleanup performs a single cleanup pass.
+func (s *Server) doCleanup(taskRunStore *store.TaskRunStore, retention time.Duration) {
+	cutoff := time.Now().Add(-retention)
+	deleted, err := taskRunStore.DeleteOlderThan(cutoff)
+	if err != nil {
+		slog.Error("task run cleanup failed", "error", err)
+		return
+	}
+	if deleted > 0 {
+		slog.Info("task run cleanup completed", "deleted", deleted, "cutoff", cutoff.Format(time.RFC3339))
+	}
 }

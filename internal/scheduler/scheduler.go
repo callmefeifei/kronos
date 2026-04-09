@@ -94,6 +94,13 @@ func (s *Scheduler) Stop() {
 	})
 }
 
+// EntryCount returns the number of scheduled tasks (cron + once timers).
+func (s *Scheduler) EntryCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.entries) + len(s.timers)
+}
+
 // AddTask registers a task with the scheduler. Safe for concurrent use.
 func (s *Scheduler) AddTask(task *model.Task) error {
 	s.mu.Lock()
