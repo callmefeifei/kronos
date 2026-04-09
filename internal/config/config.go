@@ -189,26 +189,37 @@ func Load(cfgFile string) (*Config, error) {
 		}
 		configUsed = cfgFile
 	} else {
-		// Try ./kronos.yaml first, then ~/.kronos/kronos.yaml
-		viper.SetConfigName("kronos")
-		viper.SetConfigType("yaml")
-		viper.AddConfigPath(".")
-
+		// Try ./kronos.yaml first, then ~/.kronos/kronos.yaml.
+		// Use explicit file paths instead of SetConfigName + AddConfigPath
+		// to avoid viper matching non-YAML files (e.g. a "kronos" binary)
+		// that happen to share the same base name.
 		kDir, err := kronosDir()
 		if err != nil {
 			return nil, err
 		}
-		viper.AddConfigPath(kDir)
 
-		if err := viper.ReadInConfig(); err != nil {
-			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-				// No config file found; write defaults to ~/.kronos/kronos.yaml
-				configUsed = filepath.Join(kDir, "kronos.yaml")
-			} else {
-				return nil, fmt.Errorf("read config: %w", err)
+		candidates := []string{
+			"kronos.yaml",
+			filepath.Join(kDir, "kronos.yaml"),
+		}
+
+		found := false
+		for _, candidate := range candidates {
+			if _, err := os.Stat(candidate); err == nil {
+				viper.SetConfigFile(candidate)
+				if err := viper.ReadInConfig(); err != nil {
+					return nil, fmt.Errorf("read config %s: %w", candidate, err)
+				}
+				configUsed = candidate
+				found = true
+				break
 			}
-		} else {
-			configUsed = viper.ConfigFileUsed()
+		}
+
+		if !found {
+			// No config file found; write defaults to ~/.kronos/kronos.yaml
+			viper.SetConfigType("yaml")
+			configUsed = filepath.Join(kDir, "kronos.yaml")
 		}
 	}
 
