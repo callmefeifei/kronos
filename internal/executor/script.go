@@ -3,6 +3,7 @@ package executor
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -11,12 +12,64 @@ import (
 	"github.com/pstrr/kronos/internal/model"
 )
 
-// ScriptExecutor runs a script or command specified in the task's target field.
-type ScriptExecutor struct{}
+// ScriptExecutor runs a shell command remotely via connected MCP clients.
+// Falls back to local execution only when no Notifier is configured.
+type ScriptExecutor struct {
+	Notifier TaskNotifier   // push to remote agent
+	ResultCh ResultReceiver // wait for remote result
+}
 
-// Execute runs the task target as a script/command, captures combined output,
-// and respects the context timeout.
-func (e *ScriptExecutor) Execute(ctx context.Context, task *model.Task) *RunResult {
+// Execute dispatches the script task to a remote agent (mcp_notify) when a
+// Notifier is configured AND there are connected clients.
+// Falls back to local execution when no clients are connected.
+func (e *ScriptExecutor) Execute(ctx context.Context, task *model.Task, runID int64) *RunResult {
+	// Only use remote execution if we have a notifier AND connected clients
+	if e.Notifier != nil && e.ResultCh != nil && e.Notifier.ConnectedClients() > 0 {
+		return e.executeRemote(ctx, task, runID)
+	}
+	// Fallback to local execution
+	return e.executeLocal(ctx, task)
+}
+
+// executeRemote pushes the script task to connected MCP clients and blocks
+// until the remote agent calls report_result (or the context deadline fires).
+func (e *ScriptExecutor) executeRemote(ctx context.Context, task *model.Task, runID int64) *RunResult {
+	start := time.Now()
+
+	if e.Notifier.ConnectedClients() == 0 {
+		return &RunResult{
+			Status:   "failed",
+			ExitCode: -1,
+			Error:    "no MCP clients connected to receive task notification",
+			Duration: time.Since(start),
+		}
+	}
+
+	ch := e.ResultCh.RegisterResultChannel(runID)
+	defer e.ResultCh.UnregisterResultChannel(runID)
+
+	e.Notifier.NotifyTaskFired(task, runID)
+
+	select {
+	case result := <-ch:
+		result.Duration = time.Since(start)
+		return result
+	case <-ctx.Done():
+		status := "timeout"
+		if ctx.Err() == context.Canceled {
+			status = "failed"
+		}
+		return &RunResult{
+			Status:   status,
+			ExitCode: -1,
+			Error:    fmt.Sprintf("waiting for remote result: %v", ctx.Err()),
+			Duration: time.Since(start),
+		}
+	}
+}
+
+// executeLocal runs the script on the local machine (legacy / fallback path).
+func (e *ScriptExecutor) executeLocal(ctx context.Context, task *model.Task) *RunResult {
 	start := time.Now()
 
 	cmd := buildCommand(ctx, task.Target)
@@ -56,12 +109,7 @@ func (e *ScriptExecutor) Execute(ctx context.Context, task *model.Task) *RunResu
 }
 
 // buildCommand creates the appropriate exec.Cmd based on the target string.
-// If the target contains spaces or shell metacharacters, it is treated as a
-// full shell command and executed via "sh -c". Single-path targets are
-// dispatched by file extension (.py → python3, .sh → sh -c, etc.).
 func buildCommand(ctx context.Context, target string) *exec.Cmd {
-	// If target contains spaces, it's a full command line (e.g. "python3 script.py --flag").
-	// Run via shell to handle arguments, pipes, etc.
 	if strings.ContainsAny(target, " \t|;&") {
 		return exec.CommandContext(ctx, "sh", "-c", target)
 	}
@@ -74,7 +122,6 @@ func buildCommand(ctx context.Context, target string) *exec.Cmd {
 	case ".sh":
 		return exec.CommandContext(ctx, "sh", "-c", target)
 	default:
-		// No extension → treat as shell command; otherwise execute directly.
 		if ext == "" {
 			return exec.CommandContext(ctx, "sh", "-c", target)
 		}

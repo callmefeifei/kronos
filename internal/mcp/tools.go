@@ -18,11 +18,13 @@ func createTaskTool() mcp.Tool {
 		mcp.WithString("name", mcp.Description("Task name"), mcp.Required()),
 		mcp.WithString("type", mcp.Description("Task type: remind, script, agent"), mcp.Required(), mcp.Enum("remind", "script", "agent")),
 		mcp.WithString("schedule_type", mcp.Description("Schedule type: cron, interval, once"), mcp.Required(), mcp.Enum("cron", "interval", "once")),
-		mcp.WithString("schedule_expr", mcp.Description("Schedule expression (cron expr, duration, or RFC3339 time)"), mcp.Required()),
+		mcp.WithString("schedule_expr", mcp.Description("Schedule expression: cron expr (e.g. '0 13 * * *'), interval duration (e.g. '30m'), or datetime for once (RFC3339 '2006-01-02T15:04:05+08:00' or '2006-01-02 15:04:05')"), mcp.Required()),
 		mcp.WithString("target", mcp.Description("Execution target (script path, reminder text, etc.)"), mcp.Required()),
 		mcp.WithNumber("timeout", mcp.Description("Timeout in seconds (default 300)")),
 		mcp.WithNumber("retry_count", mcp.Description("Number of retries (default 3)")),
 		mcp.WithBoolean("enabled", mcp.Description("Whether the task is enabled (default true)")),
+		mcp.WithString("notify_on", mcp.Description("When to send a notification: always (success+fail), success, fail, never. For remind tasks defaults to always."), mcp.Enum("always", "success", "fail", "never")),
+		mcp.WithString("notify_channel", mcp.Description("Notification channel name, e.g. wechat, feishu (uses default channel if omitted)")),
 	)
 }
 
@@ -33,11 +35,13 @@ func updateTaskTool() mcp.Tool {
 		mcp.WithString("name", mcp.Description("Task name")),
 		mcp.WithString("type", mcp.Description("Task type: remind, script, agent"), mcp.Enum("remind", "script", "agent")),
 		mcp.WithString("schedule_type", mcp.Description("Schedule type: cron, interval, once"), mcp.Enum("cron", "interval", "once")),
-		mcp.WithString("schedule_expr", mcp.Description("Schedule expression (cron expr, duration, or RFC3339 time)")),
+		mcp.WithString("schedule_expr", mcp.Description("Schedule expression: cron expr, interval duration, or datetime for once (RFC3339 or 'YYYY-MM-DD HH:MM:SS')")),
 		mcp.WithString("target", mcp.Description("Execution target (script path, reminder text, etc.)")),
 		mcp.WithNumber("timeout", mcp.Description("Timeout in seconds")),
 		mcp.WithNumber("retry_count", mcp.Description("Number of retries")),
 		mcp.WithBoolean("enabled", mcp.Description("Whether the task is enabled")),
+		mcp.WithString("notify_on", mcp.Description("When to send a notification: always, success, fail, never"), mcp.Enum("always", "success", "fail", "never")),
+		mcp.WithString("notify_channel", mcp.Description("Notification channel name, e.g. wechat, feishu")),
 	)
 }
 
@@ -92,6 +96,17 @@ func serverStatusTool() mcp.Tool {
 
 func pollPendingTasksTool() mcp.Tool {
 	return mcp.NewTool("poll_pending_tasks",
-		mcp.WithDescription("Poll and drain pending agent tasks that need execution. Returns tasks with prompts that the calling agent should execute. Tasks are removed from the queue once returned."),
+		mcp.WithDescription("Poll and drain pending tasks that need remote execution. Returns tasks (type, target, run_id) that the calling agent should execute, then call report_result with the outcome."),
+	)
+}
+
+func reportResultTool() mcp.Tool {
+	return mcp.NewTool("report_result",
+		mcp.WithDescription("Report the execution result of a task back to Kronos after the remote agent has finished running it. Must be called after receiving a task via poll_pending_tasks or kronos/task_fired notification."),
+		mcp.WithNumber("run_id", mcp.Description("TaskRun ID received in the task notification"), mcp.Required()),
+		mcp.WithString("status", mcp.Description("Execution outcome: success, failed, or timeout"), mcp.Required(), mcp.Enum("success", "failed", "timeout")),
+		mcp.WithString("output", mcp.Description("Combined stdout/stderr output (max 64KB)")),
+		mcp.WithString("error", mcp.Description("Error message if status is failed or timeout")),
+		mcp.WithNumber("exit_code", mcp.Description("Process exit code (meaningful for script tasks)")),
 	)
 }

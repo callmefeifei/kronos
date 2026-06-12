@@ -13,7 +13,7 @@ import (
 type RemindExecutor struct{}
 
 // Execute delivers a remind-type task. The target field is the message content.
-func (e *RemindExecutor) Execute(_ context.Context, task *model.Task) *RunResult {
+func (e *RemindExecutor) Execute(_ context.Context, task *model.Task, _ int64) *RunResult {
 	start := time.Now()
 	return &RunResult{
 		Status:   "success",

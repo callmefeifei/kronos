@@ -99,8 +99,9 @@ func (s *Server) Start() error {
 			// Non-fatal: continue without MCP.
 		} else {
 			slog.Info("mcp server started", "host", s.cfg.MCP.Host, "port", s.cfg.MCP.Port)
-			// Wire MCP notifier into runner for agent mcp_notify provider.
+			// Wire MCP server into runner: notifier + result receiver.
 			runner.MCPNotifier = s.mcpSrv
+			runner.ResultCh = s.mcpSrv
 		}
 	} else {
 		slog.Info("mcp server disabled")

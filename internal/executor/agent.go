@@ -13,15 +13,9 @@ import (
 	"github.com/pstrr/kronos/internal/model"
 )
 
-// TaskNotifier allows the agent executor to push tasks to connected MCP clients.
-type TaskNotifier interface {
-	NotifyTaskFired(task *model.Task)
-	ConnectedClients() int
-}
-
 // AgentConfig holds optional configuration passed via task.Args.
 type AgentConfig struct {
-	Provider         string   `json:"provider,omitempty"`             // "cli" (default) or "mcp_notify"
+	Provider         string   `json:"provider,omitempty"`             // "mcp_notify" (default) or "cli"
 	Model            string   `json:"model,omitempty"`                // claude model (e.g. "sonnet", "opus")
 	MaxTurns         int      `json:"max_turns,omitempty"`            // max agentic turns (default 10)
 	AllowedTools     []string `json:"allowed_tools,omitempty"`        // tool allowlist
@@ -34,25 +28,28 @@ type AgentConfig struct {
 	CLIPath          string   `json:"cli_path,omitempty"`             // absolute path to claude CLI binary
 }
 
-// AgentExecutor runs a prompt via the `claude` CLI or dispatches to MCP clients.
+// AgentExecutor runs a prompt via connected MCP clients (default) or the local `claude` CLI.
 // The task's Target field contains the natural language instruction (prompt).
 // The task's Args field (JSON) contains optional AgentConfig overrides.
 type AgentExecutor struct {
-	Notifier TaskNotifier // optional, set by Runner if MCP server is available
+	Notifier TaskNotifier   // required for mcp_notify provider
+	ResultCh ResultReceiver // required for mcp_notify provider
 }
 
 // Execute runs the agent task based on the configured provider.
-func (e *AgentExecutor) Execute(ctx context.Context, task *model.Task) *RunResult {
+func (e *AgentExecutor) Execute(ctx context.Context, task *model.Task, runID int64) *RunResult {
 	cfg := parseAgentConfig(task.Args)
 
-	if cfg.Provider == "mcp_notify" {
-		return e.executeMCPNotify(task, cfg)
+	if cfg.Provider == "cli" {
+		return e.executeCLI(ctx, task, cfg)
 	}
-	return e.executeCLI(ctx, task, cfg)
+	// Default: mcp_notify — remote agent executes, reports result back.
+	return e.executeMCPNotify(ctx, task, cfg, runID)
 }
 
-// executeMCPNotify sends the task prompt to connected MCP clients as a notification.
-func (e *AgentExecutor) executeMCPNotify(task *model.Task, _ AgentConfig) *RunResult {
+// executeMCPNotify pushes the task to connected MCP clients and blocks until the
+// remote agent calls report_result (or the context deadline is exceeded).
+func (e *AgentExecutor) executeMCPNotify(ctx context.Context, task *model.Task, _ AgentConfig, runID int64) *RunResult {
 	start := time.Now()
 
 	if e.Notifier == nil || e.Notifier.ConnectedClients() == 0 {
@@ -64,13 +61,35 @@ func (e *AgentExecutor) executeMCPNotify(task *model.Task, _ AgentConfig) *RunRe
 		}
 	}
 
-	e.Notifier.NotifyTaskFired(task)
+	if e.ResultCh == nil {
+		return &RunResult{
+			Status:   "failed",
+			ExitCode: -1,
+			Error:    "result receiver not configured",
+			Duration: time.Since(start),
+		}
+	}
 
-	return &RunResult{
-		Status:   "success",
-		ExitCode: 0,
-		Output:   fmt.Sprintf("task notification sent to %d connected MCP client(s)", e.Notifier.ConnectedClients()),
-		Duration: time.Since(start),
+	ch := e.ResultCh.RegisterResultChannel(runID)
+	defer e.ResultCh.UnregisterResultChannel(runID)
+
+	e.Notifier.NotifyTaskFired(task, runID)
+
+	select {
+	case result := <-ch:
+		result.Duration = time.Since(start)
+		return result
+	case <-ctx.Done():
+		status := "timeout"
+		if ctx.Err() == context.Canceled {
+			status = "failed"
+		}
+		return &RunResult{
+			Status:   status,
+			ExitCode: -1,
+			Error:    fmt.Sprintf("waiting for remote result: %v", ctx.Err()),
+			Duration: time.Since(start),
+		}
 	}
 }
 
@@ -130,7 +149,7 @@ func parseAgentConfig(data []byte) AgentConfig {
 		_ = json.Unmarshal(data, &cfg)
 	}
 	if cfg.Provider == "" {
-		cfg.Provider = "cli"
+		cfg.Provider = "mcp_notify" // default: remote agent execution
 	}
 	if cfg.MaxTurns <= 0 {
 		cfg.MaxTurns = 10

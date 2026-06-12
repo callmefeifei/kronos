@@ -24,20 +24,33 @@ type RunResult struct {
 	Duration time.Duration // wall-clock duration
 }
 
+// TaskNotifier allows executors to push tasks to connected MCP clients.
+type TaskNotifier interface {
+	NotifyTaskFired(task *model.Task, runID int64)
+	ConnectedClients() int
+}
+
+// ResultReceiver allows executors to wait for async results reported back
+// by remote agents after they finish executing a task.
+type ResultReceiver interface {
+	RegisterResultChannel(runID int64) <-chan *RunResult
+	UnregisterResultChannel(runID int64)
+}
+
 // Executor is the interface every task-type executor must implement.
 type Executor interface {
-	Execute(ctx context.Context, task *model.Task) *RunResult
+	Execute(ctx context.Context, task *model.Task, runID int64) *RunResult
 }
 
 // Dispatch returns the appropriate Executor for a given task type.
-func Dispatch(taskType string, notifier TaskNotifier) (Executor, error) {
+func Dispatch(taskType string, notifier TaskNotifier, resultCh ResultReceiver) (Executor, error) {
 	switch taskType {
 	case "remind":
 		return &RemindExecutor{}, nil
 	case "script":
-		return &ScriptExecutor{}, nil
+		return &ScriptExecutor{Notifier: notifier, ResultCh: resultCh}, nil
 	case "agent":
-		return &AgentExecutor{Notifier: notifier}, nil
+		return &AgentExecutor{Notifier: notifier, ResultCh: resultCh}, nil
 	default:
 		return nil, fmt.Errorf("unknown task type: %s", taskType)
 	}
@@ -48,7 +61,8 @@ type Runner struct {
 	TaskStore    *store.TaskStore
 	TaskRunStore *store.TaskRunStore
 	Notifier     *notifier.Manager
-	MCPNotifier  TaskNotifier // optional, for agent mcp_notify provider
+	MCPNotifier  TaskNotifier   // optional, for mcp_notify provider
+	ResultCh     ResultReceiver // optional, for waiting on remote results
 }
 
 // NewRunner creates a Runner with the required dependencies.
@@ -63,7 +77,7 @@ func NewRunner(ts *store.TaskStore, trs *store.TaskRunStore, n *notifier.Manager
 // Run executes a task end-to-end: creates task_run records, handles retries,
 // sends notifications per notify_on config, and updates the task's last_run_at/last_status.
 func (r *Runner) Run(ctx context.Context, task *model.Task, triggeredBy string) {
-	executor, err := Dispatch(task.Type, r.MCPNotifier)
+	executor, err := Dispatch(task.Type, r.MCPNotifier, r.ResultCh)
 	if err != nil {
 		slog.Error("cannot dispatch executor", "task_id", task.ID, "type", task.Type, "error", err)
 		return
@@ -103,8 +117,8 @@ func (r *Runner) Run(ctx context.Context, task *model.Task, triggeredBy string) 
 		timeout := time.Duration(task.Timeout) * time.Second
 		execCtx, cancel := context.WithTimeout(ctx, timeout)
 
-		// Execute.
-		result := executor.Execute(execCtx, task)
+		// Execute — pass run.ID so remote executors can register result channels.
+		result := executor.Execute(execCtx, task, run.ID)
 		cancel()
 
 		lastResult = result
@@ -173,6 +187,7 @@ func (r *Runner) maybeNotify(task *model.Task, run *model.TaskRun, status string
 		Output:    run.Output,
 		Error:     run.Error,
 		Timestamp: time.Now(),
+		Meta:      notificationMeta(task),
 	}
 
 	if task.NotifyChannel != "" {
@@ -180,6 +195,24 @@ func (r *Runner) maybeNotify(task *model.Task, run *model.TaskRun, status string
 	} else {
 		r.Notifier.Send(n)
 	}
+}
+
+func notificationMeta(task *model.Task) map[string]string {
+	meta := map[string]string{}
+	if task.Args == nil {
+		return meta
+	}
+	var args map[string]any
+	if err := json.Unmarshal(task.Args, &args); err != nil {
+		return meta
+	}
+	if token, ok := args["notification_token"].(string); ok && token != "" {
+		meta["wechat_token"] = token
+	}
+	if topic, ok := args["notification_topic"].(string); ok && topic != "" {
+		meta["wechat_topic"] = topic
+	}
+	return meta
 }
 
 // truncateOutput keeps the last maxOutputBytes of output if it exceeds the limit.

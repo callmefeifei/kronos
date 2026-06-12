@@ -34,10 +34,17 @@ func (w *WechatNotifier) Name() string { return "wechat" }
 // Send posts a form-urlencoded message to the WeChat push API.
 func (w *WechatNotifier) Send(ctx context.Context, n *Notification) error {
 	topic := fmt.Sprintf("Kronos: %s", n.TaskName)
+	if n.Meta != nil && n.Meta["wechat_topic"] != "" {
+		topic = n.Meta["wechat_topic"]
+	}
+	token := w.token
+	if n.Meta != nil && n.Meta["wechat_token"] != "" {
+		token = n.Meta["wechat_token"]
+	}
 	message := buildWechatMessage(n)
 
 	form := url.Values{
-		"token":   {w.token},
+		"token":   {token},
 		"topic":   {topic},
 		"message": {message},
 	}

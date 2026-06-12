@@ -2,10 +2,12 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"gorm.io/datatypes"
 
 	"github.com/pstrr/kronos/internal/model"
 	"github.com/pstrr/kronos/internal/scheduler"
@@ -58,17 +60,45 @@ func (h *DirectHandler) handleListTasks(_ context.Context, req mcp.CallToolReque
 	})
 }
 
+// buildNotifyOn converts a notify_on string ("always", "success", "fail", "never")
+// into the JSON blob stored in the task. For remind tasks the default is "always".
+func buildNotifyOn(notifyOn string, taskType string) datatypes.JSON {
+	if notifyOn == "" {
+		if taskType == "remind" {
+			notifyOn = "always"
+		} else {
+			notifyOn = "never"
+		}
+	}
+	var m map[string]bool
+	switch notifyOn {
+	case "always":
+		m = map[string]bool{"success": true, "fail": true}
+	case "success":
+		m = map[string]bool{"success": true, "fail": false}
+	case "fail":
+		m = map[string]bool{"success": false, "fail": true}
+	default: // "never"
+		m = map[string]bool{"success": false, "fail": false}
+	}
+	b, _ := json.Marshal(m)
+	return datatypes.JSON(b)
+}
+
 func (h *DirectHandler) handleCreateTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	taskType := mcp.ParseString(req, "type", "")
 	task := &model.Task{
-		Name:         mcp.ParseString(req, "name", ""),
-		Type:         mcp.ParseString(req, "type", ""),
-		ScheduleType: mcp.ParseString(req, "schedule_type", ""),
-		ScheduleExpr: mcp.ParseString(req, "schedule_expr", ""),
-		Target:       mcp.ParseString(req, "target", ""),
-		Timeout:      mcp.ParseInt(req, "timeout", 300),
-		RetryCount:   mcp.ParseInt(req, "retry_count", 3),
-		Enabled:      mcp.ParseBoolean(req, "enabled", true),
-		UserID:       0, // MCP-created tasks have no user owner
+		Name:          mcp.ParseString(req, "name", ""),
+		Type:          taskType,
+		ScheduleType:  mcp.ParseString(req, "schedule_type", ""),
+		ScheduleExpr:  mcp.ParseString(req, "schedule_expr", ""),
+		Target:        mcp.ParseString(req, "target", ""),
+		Timeout:       mcp.ParseInt(req, "timeout", 300),
+		RetryCount:    mcp.ParseInt(req, "retry_count", 3),
+		Enabled:       mcp.ParseBoolean(req, "enabled", true),
+		UserID:        0, // MCP-created tasks have no user owner
+		NotifyOn:      buildNotifyOn(mcp.ParseString(req, "notify_on", ""), taskType),
+		NotifyChannel: mcp.ParseString(req, "notify_channel", ""),
 	}
 
 	if err := h.taskStore.Create(task); err != nil {
@@ -77,7 +107,9 @@ func (h *DirectHandler) handleCreateTask(_ context.Context, req mcp.CallToolRequ
 
 	if task.Enabled {
 		if err := h.scheduler.AddTask(task); err != nil {
-			slog.Error("failed to schedule MCP-created task", "task_id", task.ID, "error", err)
+			// Roll back DB record so the caller can safely retry without creating duplicates.
+			_ = h.taskStore.Delete(task.ID)
+			return mcp.NewToolResultError(fmt.Sprintf("failed to schedule task (rolled back): %v", err)), nil
 		}
 	}
 
@@ -147,6 +179,16 @@ func (h *DirectHandler) handleUpdateTask(_ context.Context, req mcp.CallToolRequ
 				enabledChanged = true
 			}
 			task.Enabled = b
+		}
+	}
+	if v, ok := args["notify_on"]; ok {
+		if s, ok := v.(string); ok {
+			task.NotifyOn = buildNotifyOn(s, task.Type)
+		}
+	}
+	if v, ok := args["notify_channel"]; ok {
+		if s, ok := v.(string); ok {
+			task.NotifyChannel = s
 		}
 	}
 

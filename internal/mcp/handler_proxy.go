@@ -81,7 +81,7 @@ func (h *ProxyHandler) apiResultUnwrapPaged(resp map[string]interface{}, err err
 }
 
 func (h *ProxyHandler) handleCreateTask(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	body := buildTaskBody(req, "name", "type", "schedule_type", "schedule_expr", "target", "timeout", "retry_count", "enabled")
+	body := buildTaskBody(req, "name", "type", "schedule_type", "schedule_expr", "target", "timeout", "retry_count", "enabled", "notify_on", "notify_channel")
 	jsonBody, _ := json.Marshal(body)
 	resp, err := h.client.Post("/api/v1/tasks", jsonBody)
 	return h.apiResult(resp, err)
@@ -92,7 +92,7 @@ func (h *ProxyHandler) handleUpdateTask(_ context.Context, req mcp.CallToolReque
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	body := buildTaskBody(req, "name", "type", "schedule_type", "schedule_expr", "target", "timeout", "retry_count", "enabled")
+	body := buildTaskBody(req, "name", "type", "schedule_type", "schedule_expr", "target", "timeout", "retry_count", "enabled", "notify_on", "notify_channel")
 	jsonBody, _ := json.Marshal(body)
 	resp, apiErr := h.client.Put("/api/v1/tasks/"+id, jsonBody)
 	return h.apiResult(resp, apiErr)

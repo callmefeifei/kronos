@@ -20,6 +20,7 @@ type Notification struct {
 	TaskID    int64
 	TaskRunID int64
 	Timestamp time.Time
+	Meta      map[string]string
 }
 
 // Notifier is the interface that notification channels must implement.
